@@ -1,0 +1,24 @@
+# Dependencies
+node_modules/
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# SQLite database (local consultation data)
+consultations.db
+consultations.db-shm
+consultations.db-wal
+consultations.db-journal
+
+# Logs
+npm-debug.log*
+*.log
+
+# OS files
+.DS_Store
+
+# Editor
+.vscode/
+.idea/

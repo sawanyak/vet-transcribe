@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Vet Transcribe  Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Sinhala:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: system-ui, "Noto Sans Sinhala", sans-serif; background: #f4f5f7; color: #1a1a1a; }
+    header { background: #1a3a5c; color: #fff; padding: 12px 20px; }
+    header h1 { font-size: 16px; margin: 0; font-weight: 600; }
+    .tabs { display: flex; gap: 4px; padding: 12px 20px 0; }
+    .tab { padding: 10px 18px; border-radius: 8px 8px 0 0; background: #e3e6ea; color: #555; font-size: 14px; font-weight: 600; cursor: pointer; }
+    .tab.active { background: #fff; color: #1a3a5c; }
+    .content { background: #fff; margin: 0 20px 20px; border-radius: 0 10px 10px 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); min-height: calc(100vh - 140px); padding: 24px; }
+    .hidden { display: none; }
+
+    .new-panel { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; gap: 16px; padding: 60px 0; }
+    .new-panel p { color: #666; margin: 0; }
+    #newBtn { padding: 16px 32px; font-size: 16px; font-weight: 600; border: none; border-radius: 8px; background: #2e7d32; color: #fff; cursor: pointer; text-decoration: none; }
+
+    .history-layout { display: flex; gap: 16px; height: calc(100vh - 188px); }
+    .list { flex: 0 0 320px; overflow-y: auto; border-right: 1px solid #eee; padding-right: 16px; }
+    .list-item { display: flex; align-items: flex-start; gap: 8px; padding: 12px; border-radius: 8px; margin-bottom: 8px; cursor: pointer; border: 1px solid #eee; }
+    .list-item:hover { background: #f4f5f7; }
+    .list-item.active { background: #e8f0fe; border-color: #1a3a5c; }
+    .list-item .info { flex: 1; min-width: 0; }
+    .list-item .date { font-weight: 600; font-size: 14px; }
+    .list-item .meta { font-size: 12px; color: #777; margin-top: 4px; }
+    .list-item .meta .flags { color: #c62828; font-weight: 600; }
+    .delete-btn { flex: 0 0 auto; border: none; background: transparent; color: #999; font-size: 16px; line-height: 1; padding: 4px 6px; border-radius: 6px; cursor: pointer; }
+    .delete-btn:hover { background: #fdecea; color: #c62828; }
+    .detail { flex: 1; overflow-y: auto; padding-left: 4px; }
+    .empty { color: #aaa; font-size: 13px; }
+
+    .section { margin-bottom: 20px; }
+    .section h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px; color: #666; margin: 0 0 12px; }
+    .card { border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; }
+    .flag { background: #fdecea; border-left: 4px solid #c62828; color: #611a15; font-weight: 500; }
+    .dx { border-left: 4px solid #ccc; background: #fafafa; }
+    .dx.high { border-left-color: #c62828; }
+    .dx.medium { border-left-color: #f9a825; }
+    .dx.low { border-left-color: #9e9e9e; }
+    .dx .name { font-weight: 600; }
+    .dx .conf { font-size: 11px; text-transform: uppercase; float: right; color: #888; }
+    .dx .reason { font-size: 13px; color: #555; margin-top: 4px; }
+    .q { background: #e8f0fe; border-left: 4px solid #1a3a5c; padding: 8px 12px; border-radius: 8px; margin-bottom: 6px; font-size: 14px; }
+    .turn { margin-bottom: 8px; line-height: 1.4; font-size: 14px; }
+    .transcript-box { max-height: 260px; overflow-y: auto; background: #fafafa; border-radius: 8px; padding: 12px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Vet Transcribe — Dashboard</h1>
+  </header>
+
+  <div class="tabs">
+    <div class="tab active" id="tabNew">New Consultation</div>
+    <div class="tab" id="tabHistory">History</div>
+  </div>
+
+  <div class="content">
+    <div id="panelNew" class="new-panel">
+      <p>Start a new veterinary consultation with live transcription and decision support.</p>
+      <a id="newBtn" href="/consult.html">Start New Consultation</a>
+    </div>
+
+    <div id="panelHistory" class="history-layout hidden">
+      <div class="list" id="list"><div class="empty">Loading…</div></div>
+      <div class="detail" id="detail"><div class="empty">Select a consultation to view details.</div></div>
+    </div>
+  </div>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+
+    $("tabNew").onclick = () => showTab("new");
+    $("tabHistory").onclick = () => showTab("history");
+
+    function showTab(tab) {
+      $("tabNew").classList.toggle("active", tab === "new");
+      $("tabHistory").classList.toggle("active", tab === "history");
+      $("panelNew").classList.toggle("hidden", tab !== "new");
+      $("panelHistory").classList.toggle("hidden", tab !== "history");
+      if (tab === "history") loadHistory();
+    }
+
+    function formatDuration(totalSeconds) {
+      const m = Math.floor(totalSeconds / 60);
+      const s = totalSeconds % 60;
+      return `${m}m ${String(s).padStart(2, "0")}s`;
+    }
+
+    function formatDate(iso) {
+      const d = new Date(iso);
+      return d.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+    }
+
+    async function loadHistory() {
+      $("list").innerHTML = `<div class="empty">Loading…</div>`;
+      try {
+        const res = await fetch("/api/consultations");
+        const items = await res.json();
+        if (!items.length) {
+          $("list").innerHTML = `<div class="empty">No consultations yet.</div>`;
+          return;
+        }
+        $("list").innerHTML = items.map(c => `
+          <div class="list-item" data-id="${c.id}">
+            <div class="info">
+              <div class="date">${formatDate(c.started_at)}</div>
+              <div class="meta">
+                ${formatDuration(c.duration_seconds)} · ${c.turn_count} turns
+                ${c.red_flag_count ? `· <span class="flags">${c.red_flag_count} red flag${c.red_flag_count > 1 ? "s" : ""}</span>` : ""}
+              </div>
+            </div>
+            <button class="delete-btn" data-id="${c.id}" title="Delete consultation">✕</button>
+          </div>`).join("");
+        $("list").querySelectorAll(".list-item").forEach(el => {
+          el.querySelector(".info").onclick = () => selectConsultation(el.dataset.id, el);
+        });
+        $("list").querySelectorAll(".delete-btn").forEach(btn => {
+          btn.onclick = (e) => {
+            e.stopPropagation();
+            deleteConsultation(btn.dataset.id);
+          };
+        });
+      } catch (err) {
+        $("list").innerHTML = `<div class="empty">Failed to load history.</div>`;
+      }
+    }
+
+    async function deleteConsultation(id) {
+      if (!confirm("Delete this consultation? This cannot be undone.")) return;
+      try {
+        await fetch(`/api/consultations/${id}`, { method: "DELETE" });
+        const wasSelected = $("list").querySelector(`.list-item[data-id="${id}"]`)?.classList.contains("active");
+        if (wasSelected) {
+          $("detail").innerHTML = `<div class="empty">Select a consultation to view details.</div>`;
+        }
+        loadHistory();
+      } catch (err) {
+        alert("Failed to delete consultation.");
+      }
+    }
+
+    async function selectConsultation(id, el) {
+      $("list").querySelectorAll(".list-item").forEach(i => i.classList.remove("active"));
+      el.classList.add("active");
+      $("detail").innerHTML = `<div class="empty">Loading…</div>`;
+      try {
+        const res = await fetch(`/api/consultations/${id}`);
+        const c = await res.json();
+        renderDetail(c);
+      } catch (err) {
+        $("detail").innerHTML = `<div class="empty">Failed to load consultation.</div>`;
+      }
+    }
+
+    function renderDetail(c) {
+      const questions = c.suggested_questions?.length
+        ? c.suggested_questions.map(q => `<div class="q">${q}</div>`).join("")
+        : `<div class="empty">No questions suggested.</div>`;
+
+      const flags = c.red_flags?.length
+        ? c.red_flags.map(f => `<div class="card flag">⚠ ${f}</div>`).join("")
+        : `<div class="empty">None flagged.</div>`;
+
+      const dx = c.differentials?.length
+        ? c.differentials.map(d => `
+            <div class="card dx ${d.confidence}">
+              <span class="conf">${d.confidence}</span>
+              <div class="name">${d.disease}</div>
+              <div class="reason">${d.reasoning}</div>
+            </div>`).join("")
+        : `<div class="empty">No conditions suggested.</div>`;
+
+      const transcript = c.transcript?.length
+        ? c.transcript.map(t => `<div class="turn">${t.text}</div>`).join("")
+        : `<div class="empty">No transcript recorded.</div>`;
+
+      $("detail").innerHTML = `
+        <div class="section">
+          <h2>${formatDate(c.started_at)} · ${formatDuration(c.duration_seconds)}</h2>
+        </div>
+        <div class="section">
+          <h2>Suggested Questions</h2>
+          ${questions}
+        </div>
+        <div class="section">
+          <h2>Red Flags</h2>
+          ${flags}
+        </div>
+        <div class="section">
+          <h2>Possible Conditions</h2>
+          ${dx}
+        </div>
+        <div class="section">
+          <h2>Transcript</h2>
+          <div class="transcript-box">${transcript}</div>
+        </div>`;
+    }
+  </script>
+</body>
+</html>
